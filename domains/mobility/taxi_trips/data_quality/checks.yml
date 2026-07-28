@@ -1,0 +1,46 @@
+# SodaCL checks for dataset view name `taxi_trips` (temp view in soda_runner).
+# Mirrored from ../contract.yaml (DCS 0.9.3) — Contract = policy; Soda = execution.
+# Soft (warn) checks do NOT drive quarantine. Hard (fail) checks do.
+
+checks for taxi_trips:
+  # --- HARD (error → quarantine) ---
+  - failed rows:
+      name: dropoff_after_pickup
+      fail condition: dropoff_datetime IS NULL OR pickup_datetime IS NULL OR dropoff_datetime < pickup_datetime
+
+  - failed rows:
+      name: vendor_id_not_null
+      fail condition: vendor_id IS NULL
+
+  - failed rows:
+      name: total_amount_not_null
+      fail condition: total_amount IS NULL
+
+  - failed rows:
+      name: pickup_not_null
+      fail condition: pickup_datetime IS NULL
+
+  - failed rows:
+      name: dropoff_not_null
+      fail condition: dropoff_datetime IS NULL
+
+  - failed rows:
+      name: taxi_type_valid
+      fail condition: taxi_type IS NULL OR taxi_type NOT IN ('yellow', 'green')
+
+  - failed rows:
+      name: year_month_in_window
+      fail condition: year_month IS NULL OR year_month NOT IN ('2023-01','2023-02','2023-03','2023-04','2023-05')
+
+  # --- SOFT (warn → scorecard only; protect Q1/Q2 fleet metrics) ---
+  - failed rows:
+      name: total_amount_non_negative
+      warn condition: total_amount IS NULL OR total_amount < 0
+
+  - failed rows:
+      name: passenger_count_range
+      warn condition: passenger_count IS NULL OR NOT (passenger_count BETWEEN 1 AND 6)
+
+  - failed rows:
+      name: vendor_id_enum
+      warn condition: vendor_id IS NULL OR vendor_id NOT IN (1, 2)

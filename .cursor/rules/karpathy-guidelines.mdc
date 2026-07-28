@@ -1,0 +1,34 @@
+---
+description: Karpathy-inspired engineering guidelines for this data product repo
+alwaysApply: true
+---
+
+# Karpathy Guidelines (adapted)
+
+Source: https://gist.github.com/Planxnx/64b173bacf2c8c43435c4333d0b9bd94
+
+Apply these rules on every change in this repository.
+
+1. **Think before coding** — State assumptions explicitly (README `terms`, contract). Scope is yellow+green Jan–May 2023; FHV/FHVHV out; green `lpep_*` → canonical `tpep_*`; Databricks Free Edition (CE retired).
+
+2. **Simplicity first** — One `governance_engine.py` + one `soda_runner.py` (Soda Core executes DQ). Three governance tables only. Orchestration is the Databricks job graph (see `databricks.yml`). No GE/PyDeequ/Monte Carlo runtime deps.
+
+3. **Surgical changes** — Thin jobs; shared lib only where reuse is real (`contract`, `dq_engine`/`soda_runner`, `governance_engine`, `metadata`, `report`).
+
+4. **Goal-driven execution** — Each task has a verify criterion. Jobs exit non-zero when `severity: error` rules fail.
+
+5. **Model only for judgment** — Pipeline runtime is deterministic (Spark SQL + YAML). No LLM in the pipeline.
+
+6. **Token budgets** — Prefer small, complete modules over speculative abstractions.
+
+7. **Surface conflicts** — Canonical contract format is **Data Contract Specification 0.9.3**. Bitol ODCS v3 is a different standard — do not mix schemas in the YAML.
+
+8. **Read before you write** — Before editing a lib/job, read the contract and the immediate caller. Do not duplicate logic already expressed in YAML.
+
+9. **Tests verify intent** — Name tests by *why* (e.g. `test_soft_passenger_count_does_not_quarantine_because_protects_q2`).
+
+10. **Checkpoint** — After meaningful work: what was done / verified / still pending.
+
+11. **Match conventions** — snake_case, `main(argv)`, paths relative to repo root, idiomatic PySpark.
+
+12. **Fail loud** — Log counts (raw/clean/quarantine/consumption), `run_id`, failed rules. Never silent success with zero rows.

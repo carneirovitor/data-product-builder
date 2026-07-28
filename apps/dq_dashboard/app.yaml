@@ -1,0 +1,17 @@
+# run.py reads DATABRICKS_APP_PORT at runtime — yaml token substitution does not work.
+command:
+  - python
+  - run.py
+env:
+  - name: STREAMLIT_GATHER_USAGE_STATS
+    value: "false"
+  - name: STREAMLIT_SERVER_ENABLE_CORS
+    value: "false"
+  - name: STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION
+    value: "false"
+  - name: CATALOG
+    value: workspace
+  - name: REPO_ROOT
+    value: /Volumes/workspace/default/taxi_code
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: b5e318ba77a38166

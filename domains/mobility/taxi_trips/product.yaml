@@ -1,0 +1,41 @@
+product:
+  id: urn:dataproduct:mobility:taxi_trips
+  name: mobility_taxi_trips
+  domain: mobility
+  owner: governance_team
+  stewards:
+    - role: data_owner
+      team: governance_team
+    - role: data_engineer
+      team: mobility_platform
+  description: >
+    Data product delivering governed NYC TLC yellow+green trips (Jan–May 2023)
+    with executable contract, DAMA scorecard, quarantine incident trail, and
+    fitness-for-use checks for business analyses Q1/Q2.
+  contract: urn:datacontract:mobility:taxi_trips
+  contract_path: domains/mobility/taxi_trips/contract.yaml
+  sla:
+    coverage_window: "2023-01..2023-05"
+    layers: [raw, clean, consumption]
+    refresh: batch_overwrite
+  # Applied as UC table tags (fallback: TBLPROPERTIES tag.*)
+  tags:
+    - domain:mobility
+    - classification:public
+    - contains_pii:false
+    - data_quality:governed
+    - reliability:scored
+  outputs:
+    - fqn: consumption.taxi_trips
+      grain: trip
+    - fqn: consumption.vw_taxi_trips_tlc
+      grain: trip
+      description: Same rows under the original TLC column names (VendorID, tpep_*)
+    - fqn: consumption.kpi_yellow_avg_total_amount_monthly
+      grain: month
+    - fqn: consumption.kpi_fleet_avg_passenger_count_hourly
+      grain: pickup_hour
+    - fqn: clean.taxi_trips_quarantine
+      grain: rejected_trip
+    - fqn: governance.vw_dq_scorecard
+      grain: dimension_score

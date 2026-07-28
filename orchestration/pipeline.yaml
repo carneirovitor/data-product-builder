@@ -1,0 +1,25 @@
+pipeline:
+  name: taxi_data_product
+  description: >
+    Domain orchestration manifesto. Databricks Asset Bundle
+    (databricks.yml) mirrors these tasks/depends_on and is what runs today.
+  tasks:
+    ingest_raw:
+      entrypoint: src/jobs/ingest_raw.py
+      description: Volume/files landing → raw Delta + profile
+    build_clean:
+      entrypoint: src/jobs/build_clean.py
+      depends_on: [ingest_raw]
+      description: Canonicalize + hard/soft DQ gate + quarantine + scorecard aggregates
+    publish_consumption:
+      entrypoint: src/jobs/publish_consumption.py
+      depends_on: [build_clean]
+      description: Publish CDEs + fitness_for_use
+    run_analysis:
+      entrypoint: src/jobs/run_analysis.py
+      depends_on: [publish_consumption]
+      description: Materialize consumption/metrics/*.sql as consumption.kpi_*
+
+  notes:
+    validate_contract: Runs in CI/local only (no Spark) — not part of Databricks job graph
+    observability: Streamlit app apps/dq_dashboard (not a pipeline task)

@@ -1,0 +1,141 @@
+# Databricks Asset Bundle — must live at repo root for clean src/ sync.
+# Domain topology: orchestration/pipeline.yaml (keep depends_on in sync).
+#
+# Free Edition serverless note: Workspace FUSE is flaky for spark_python_task
+# open()/imports (Errno 5). Every task runs one thin notebook that runpy's a
+# Volume script under /Volumes/workspace/default/taxi_code (see repo_root).
+# Source of that notebook: orchestration/databricks/notebooks/entrypoint.py
+
+bundle:
+  name: taxi_data_product
+
+variables:
+  catalog:
+    description: Unity Catalog name (Free Edition typically 'workspace')
+    default: workspace
+  landing_path:
+    description: UC Volume or path with yellow/green parquet files
+    default: /Volumes/workspace/default/taxi_landing
+  repo_root:
+    description: UC Volume root with src/, domains/, platform/ (serverless-safe)
+    default: /Volumes/workspace/default/taxi_code
+  sql_warehouse_id:
+    description: SQL warehouse ID for the DQ observability app
+    default: b5e318ba77a38166
+
+include: []
+
+artifacts: {}
+
+sync:
+  include:
+    - src/**
+    - domains/**
+    - platform/**
+    - apps/dq_dashboard/**
+    - requirements.txt
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      # host is taken from Databricks CLI profile (~/.databrickscfg)
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+
+resources:
+  jobs:
+    taxi_data_product:
+      name: taxi_data_product
+      tags:
+        domain: mobility
+        product: taxi_trips
+        governance: dama
+      # Free Edition serverless
+      performance_target: PERFORMANCE_OPTIMIZED
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: landing_path
+          default: ${var.landing_path}
+        # Single run_id shared by every task, so governance rows from one
+        # execution join across profile / DQ / fitness / KPIs — and resolve
+        # back to this job run in the UI.
+        - name: run_id
+          default: "{{job.run_id}}"
+      tasks:
+        - task_key: ingest_raw
+          notebook_task:
+            notebook_path: /Workspace/Users/${workspace.current_user.userName}/taxi_dp_notebooks/entrypoint
+            base_parameters:
+              job: ingest_raw
+              repo_root: ${var.repo_root}
+              catalog: "{{job.parameters.catalog}}"
+              run_id: "{{job.parameters.run_id}}"
+              landing_path: "{{job.parameters.landing_path}}"
+          environment_key: default
+
+        - task_key: build_clean
+          depends_on:
+            - task_key: ingest_raw
+          notebook_task:
+            notebook_path: /Workspace/Users/${workspace.current_user.userName}/taxi_dp_notebooks/entrypoint
+            base_parameters:
+              job: build_clean
+              repo_root: ${var.repo_root}
+              catalog: "{{job.parameters.catalog}}"
+              run_id: "{{job.parameters.run_id}}"
+          environment_key: default
+
+        - task_key: publish_consumption
+          depends_on:
+            - task_key: build_clean
+          notebook_task:
+            notebook_path: /Workspace/Users/${workspace.current_user.userName}/taxi_dp_notebooks/entrypoint
+            base_parameters:
+              job: publish_consumption
+              repo_root: ${var.repo_root}
+              catalog: "{{job.parameters.catalog}}"
+              run_id: "{{job.parameters.run_id}}"
+          environment_key: default
+
+        - task_key: run_analysis
+          depends_on:
+            - task_key: publish_consumption
+          notebook_task:
+            notebook_path: /Workspace/Users/${workspace.current_user.userName}/taxi_dp_notebooks/entrypoint
+            base_parameters:
+              job: run_analysis
+              repo_root: ${var.repo_root}
+              catalog: "{{job.parameters.catalog}}"
+              run_id: "{{job.parameters.run_id}}"
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - pyyaml
+              - soda-core==3.5.6
+
+  apps:
+    dq_observability:
+      name: taxi-dq-observability
+      description: >
+        Streamlit portal for DQ scorecard, profiling, quarantine triage,
+        fitness for use, and business Q1/Q2 — reads governance tables live.
+      source_code_path: ./apps/dq_dashboard
+      # Binding the warehouse here grants the app service principal CAN_USE on
+      # deploy. Without it the UI loads but every query fails on permission.
+      resources:
+        - name: sql_warehouse
+          description: Warehouse serving the governance and KPI queries
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+      permissions:
+        - user_name: ${workspace.current_user.userName}
+          level: CAN_USE
+        - user_name: ${workspace.current_user.userName}
+          level: CAN_MANAGE

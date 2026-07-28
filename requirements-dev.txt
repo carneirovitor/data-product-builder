@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=7.4
+pyspark>=3.5
+delta-spark>=3.0

@@ -1,0 +1,5 @@
+pyyaml>=6.0
+# Soda Core 3.5.x — Spark DF package; pin aligned versions (4.x soda-core ≠ spark-df yet)
+# On Databricks serverless, install soda-core-spark-df WITHOUT deps so pip does not
+# shadow the runtime PySpark (causes CANNOT_OPEN_SOCKET / tempfile PermissionError).
+soda-core==3.5.6
