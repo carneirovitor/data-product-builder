@@ -181,6 +181,7 @@ Passo a passo completo (Volume, permissões do app): [Anexo técnico](#anexo-té
 | As checks executáveis                  | [`domains/mobility/taxi_trips/data_quality/checks.yml`](domains/mobility/taxi_trips/data_quality/checks.yml)                                 |
 | SQL da Q1 / Q2                         | [`domains/mobility/taxi_trips/consumption/metrics/`](domains/mobility/taxi_trips/consumption/metrics/)                                       |
 | View com nomes TLC originais           | [`domains/mobility/taxi_trips/consumption/views/vw_taxi_trips_tlc.sql`](domains/mobility/taxi_trips/consumption/views/vw_taxi_trips_tlc.sql) |
+| Notebook de verificação (SQL read-only)| [`notebooks/verify_business_questions.py`](notebooks/verify_business_questions.py)                                                           |
 | Jobs do pipeline                       | [`src/jobs/`](src/jobs/)                                                                                                                     |
 | Portal DQ                              | [`apps/dq_dashboard/`](apps/dq_dashboard/) · [`report.md`](report.md)                                                                        |
 
