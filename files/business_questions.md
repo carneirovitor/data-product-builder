@@ -1,38 +1,40 @@
-# Produto de dados — corridas de táxi NYC
+# Data product — NYC taxi trips
 
-## Objetivo
+**Language:** **English** · [Português](business_questions.pt.md)
 
-Ingerir registros de corridas de táxi de Nova York em um data lake, disponibilizá-los para consumo analítico e responder a perguntas de negócio sobre preço e ocupação da frota — com qualidade e governança auditáveis.
+## Goal
 
-Escopo deste produto:
+Ingest New York City taxi trip records into a data lake, make them available for analytical consumption, and answer business questions about fleet pricing and occupancy — with auditable quality and governance.
 
-- Ingestão dos arquivos TLC (yellow e green) no lake
-- Camada de consumo consultável (SQL)
-- Duas análises de negócio materializadas como KPIs
+Product scope:
 
----
-
-## Dados
-
-Fonte: [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
-
-Recorte: **janeiro a maio de 2023** (yellow + green). Dicionários e metadados de apoio estão em `files/`.
+- Ingest TLC files (yellow and green) into the lake
+- A queryable consumption layer (SQL)
+- Two business analyses materialized as KPIs
 
 ---
 
-## Considerações de modelagem
+## Data
 
-- Landing dos arquivos originais (Volume / object store)
-- Camada de consumo estruturada para o usuário final
-- Limpeza e regras de qualidade conforme a política do domínio
-- Na camada de consumo devem existir, no mínimo: **VendorID**, **passenger_count**, **total_amount**, **tpep_pickup_datetime**, **tpep_dropoff_datetime**
-- Demais colunas são opcionais; o lake parte sem tabelas pré-existentes
+Source: [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
+
+Window: **January–May 2023** (yellow + green). Supporting dictionaries and metadata live under `files/`.
 
 ---
 
-## Perguntas de negócio
+## Modeling notes
 
-1. Qual a média de valor total (`total_amount`) recebido em um mês, considerando todos os yellow táxis da frota?
-2. Qual a média de passageiros (`passenger_count`) por cada hora do dia, no mês de maio, considerando todos os táxis da frota?
+- Landing for original files (Volume / object store)
+- Structured consumption layer for end users
+- Cleaning and quality rules per domain policy
+- Consumption must expose at least: **VendorID**, **passenger_count**, **total_amount**, **tpep_pickup_datetime**, **tpep_dropoff_datetime**
+- Other columns are optional; the lake starts with no pre-existing tables
 
-Respostas materializadas: `consumption.kpi_*` (ver README).
+---
+
+## Business questions
+
+1. What is the average total amount (`total_amount`) received in a month across all yellow taxis in the fleet?
+2. What is the average passenger count (`passenger_count`) for each hour of day in May across all taxis in the fleet?
+
+Materialized answers: `consumption.kpi_*` (see README).

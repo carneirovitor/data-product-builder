@@ -1,134 +1,124 @@
-# Corridas de táxi em NY — com qualidade e governança de verdade
+# NYC taxi trips — real data quality and governance
 
-Olá. Este repo foi criado para demonstrar como podemos traduzir frameworks de **Governança de Dados** na linguagem de **Engenharia de Dados**.
+**Language:** **English** · [Português](README.pt.md)
 
-O exemplo prático é um **data product** de corridas de táxi NYC: os números das [perguntas de negócio](files/business_questions.md) só fazem sentido se a gente souber **o que entrou**, **o que foi rejeitado**, **por quê**, e **se o produto ainda serve para a pergunta**.
+Hi. This repo shows how to translate **Data Governance** frameworks into the language of **Data Engineering**.
 
-Se você tem pouco tempo, leia nesta ordem:
+The working example is an NYC taxi **data product**: the [business questions](files/business_questions.md) only make sense if we know **what landed**, **what was rejected**, **why**, and **whether the product still answers the question**.
 
-1. [As respostas às perguntas de negócio](#as-respostas-às-perguntas-de-negócio) — os números
-2. [Como pensamos qualidade](#como-pensamos-qualidade) — a decisão mais importante
-3. [Por que o repositório é assim](#por-que-o-repositório-é-assim) — racional (mesh, governança como código, escala)
-4. [O que foi construído](#o-que-foi-construído) — panorama em uma tela
-5. [Como rodar](#como-rodar) — se quiser reproduzir
-6. [O que eu deliberadamente não fiz](#o-que-eu-deliberadamente-não-fiz) — limites honestos
+Short on time? Read in this order:
 
-O detalhe técnico (arquivos, jobs, contrato) está no final, em [Anexo técnico](#anexo-técnico).
+1. [Answers to the business questions](#answers-to-the-business-questions) — the numbers
+2. [How we think about quality](#how-we-think-about-quality) — the most important decision
+3. [Why the repository looks like this](#why-the-repository-looks-like-this) — rationale (mesh, governance as code, scale)
+4. [What was built](#what-was-built) — one-screen overview
+5. [How to run](#how-to-run) — if you want to reproduce
+6. [What I deliberately did not do](#what-i-deliberately-did-not-do) — honest limits
+
+Technical detail (files, jobs, contract) is at the end, in [Technical appendix](#technical-appendix).
 
 ---
 
+## Answers to the business questions
 
+Scope: **yellow + green** taxis, January–May 2023 (~16.5M trips in consumption; 908 quarantined in the latest run).
 
-## As respostas às perguntas de negócio
+### Question 1 — average `total_amount` per month (yellow)
 
-Escopo: táxis **yellow + green**, janeiro a maio de 2023 (~16,5 milhões de corridas na camada de consumo; 908 isoladas em quarentena no último run).
+| Month    | Average   | Trips   |
+| -------- | --------- | ------- |
+| Jan/2023 | US$ 27.02 | 3.07M   |
+| Feb/2023 | US$ 26.90 | 2.91M   |
+| Mar/2023 | US$ 27.80 | 3.40M   |
+| Apr/2023 | US$ 28.27 | 3.29M   |
+| May/2023 | US$ 28.96 | 3.51M   |
 
-### Pergunta 1 — média de `total_amount` por mês (yellow)
+The monthly average rises over the window (about **US$ 27.8** as the mean of monthly means). Figures come from the yellow fleet after hard quality rules.
 
+### Question 2 — average `passenger_count` by hour (May, full fleet)
 
-| Mês      | Média     | Corridas |
-| -------- | --------- | -------- |
-| Jan/2023 | US$ 27,02 | 3,07 mi  |
-| Fev/2023 | US$ 26,90 | 2,91 mi  |
-| Mar/2023 | US$ 27,80 | 3,40 mi  |
-| Abr/2023 | US$ 28,27 | 3,29 mi  |
-| Mai/2023 | US$ 28,96 | 3,51 mi  |
+In May, average occupancy across the day sits near **1.36 passengers**. Late night is a bit fuller (~1.44 around 2am); early morning is the trough (~1.24 around 6am).
 
+Important: many trips arrive without `passenger_count` (cash payments, for example). If we **dropped** those rows, the average would stop representing the fleet. So that rule is soft — it shows on the scorecard but does not remove the trip. Detail in the next section.
 
-A média mensal sobe ao longo do período (cerca de **US$ 27,8** se olharmos a média das médias). O valor vem da frota yellow já aprovada nas regras críticas de qualidade.
-
-### Pergunta 2 — média de `passenger_count` por hora (maio, frota toda)
-
-Em maio, a ocupação média ao longo do dia fica perto de **1,36 passageiros**. A madrugada é um pouco mais cheia (1,44 por volta das 2h); o começo da manhã é o vale (1,24 por volta das 6h).
-
-Uma observação importante: muita corrida vem sem `passenger_count` preenchido (pagamento em dinheiro, por exemplo). Se a gente **jogasse fora** essas linhas, a média deixaria de representar a frota. Por isso essa regra é leve — aparece no placar, mas não remove a corrida. Detalhe na próxima seção.
-
-**Onde consultar no lake**
+**Where to query in the lake**
 
 ```sql
 SELECT * FROM workspace.consumption.kpi_yellow_avg_total_amount_monthly;
 SELECT * FROM workspace.consumption.kpi_fleet_avg_passenger_count_hourly;
 ```
 
-SQL que gera esses números: `[domains/mobility/taxi_trips/consumption/metrics/](domains/mobility/taxi_trips/consumption/metrics/)`.
+SQL that produces these numbers: [`domains/mobility/taxi_trips/consumption/metrics/`](domains/mobility/taxi_trips/consumption/metrics/).
 
 ---
 
+## How we think about quality
 
+Quality here is not “zero nulls at any cost”. It is balancing **trust** with **representativeness**.
 
-## Como pensamos qualidade
+- **Hard** rules (null timestamps, dropoff before pickup, month outside the window…) → the trip goes to **quarantine** and does not enter analysis.
+- **Soft** rules (`passenger_count` outside 1–6, negative `total_amount`) → they hit the **scorecard**, but the row stays. TLC negatives are often adjustments/refunds; missing passenger count is known source noise — not a pipeline bug.
 
-Qualidade aqui não é “zerar nulos a qualquer custo”. É combinar **confiança** com **representatividade**.
+That trade-off is written in the [contract](domains/mobility/taxi_trips/contract.yaml) and mirrored in SodaCL. It is not a hidden code detail: it is policy.
 
-- Regras **críticas** (timestamps nulos, desembarque antes do embarque, mês fora da janela…) → a corrida vai para **quarentena** e não entra na análise.
-- Regras **leves** (`passenger_count` fora de 1–6, `total_amount` negativo) → entram no **placar**, mas a linha segue. Negativos no TLC costumam ser ajuste/reembolso; passageiro ausente é ruído conhecido da fonte — não um erro de pipeline.
+The dimensions we use (completeness, accuracy, consistency, validity, uniqueness) follow DAMA thinking. **Timeliness/freshness** is out of scope for this product: the slice is a historical Jan–May/2023 batch with no streaming SLA — covering the five months is **window completeness**, not “data arrived on time”. The per-dimension scorecard lives in `governance.vw_dq_scorecard`.
 
-Esse trade-off está escrito no [contrato](domains/mobility/taxi_trips/contract.yaml) e espelhado no SodaCL. Não é um detalhe escondido no código: é política.
-
-As dimensões que usamos (completude, acurácia, consistência, validade, unicidade) seguem a lógica DAMA. **Atualidade/frescor** não entra neste produto: o recorte é batch histórico Jan–Mai/2023, sem SLA de streaming — cobertura dos cinco meses é **completude da janela**, não “dado chegou a tempo”. O placar por dimensão vive em `governance.vw_dq_scorecard`.
-
-Também checamos **adequação ao uso**: os cinco meses da Q1 existem? Maio tem cobertura horária para a Q2? A camada de consumo entrega as colunas combinadas? Isso fica em `governance.fitness_for_use_result`.
+We also check **fitness for use**: do Q1’s five months exist? Does May have hourly coverage for Q2? Does consumption expose the contracted columns? That lives in `governance.fitness_for_use_result`.
 
 ---
 
+## Why the repository looks like this
 
+The point was not “pretty folders”. It was translating **data mesh** and **federated governance** — which in companies often live as PDFs, committees, and RACI charts — into something the pipeline **executes**.
 
-## Por que o repositório é assim
+### Data mesh inspiration (no theater)
 
-O racional não foi “organizar pastas bonitinhas”. Foi traduzir ideias de **data mesh** e de **governança federada** — que na empresa costumam viver em PDF, comitê e RACI — para algo que o pipeline **executa**.
+- **Domain owns the product.** Mobility owns `taxi_trips`: schema, rules, severity, and the SQL that materializes each layer. It is not a generic “lake team” deciding everyone’s policy.
+- **Clear product interface.** Consumers get `consumption.*` (plus the view with original TLC names). Quarantine and the scorecard are reliability operations, not the product API.
+- **Self-serve with a thin platform.** Generic jobs (`sql_runner`, `soda_runner`, `governance_engine`) do not know taxi business rules — they read the contract and the domain `.sql` files. The platform enables; the domain decides.
 
-### Inspiração em data mesh (sem teatro)
+### Federated governance — as code (computational)
 
-- **Domínio dono do produto.** Mobility é responsável por `taxi_trips`: schema, regras, severidade e o SQL que materializa cada camada. Não é um “time de lake” genérico decidindo a política de todo mundo.
-- **Produto com interface clara.** O consumidor recebe `consumption.`* (e a view com os nomes TLC originais). Quarentena e placar são operação de confiabilidade, não a API do produto.
-- **Self-serve com plataforma fina.** Jobs genéricos (`sql_runner`, `soda_runner`, `governance_engine`) não conhecem a regra de negócio do táxi — leem o contrato e os `.sql` do domínio. A plataforma habilita; o domínio decide.
+Paper-central governance defines policy and hopes someone complies. Here the same intent becomes a versioned artifact:
 
+| In the “paper” world                              | Here                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------ |
+| Dictionary / policy in corporate portals          | [`contract.yaml`](domains/mobility/taxi_trips/contract.yaml) (DCS 0.9.3) |
+| Quality checklists in spreadsheets                | SodaCL + gate in `build_clean` (hard/soft)                               |
+| Steward “accountable” in sheets and other docs    | Owner on contract/product + PR that changes the rule                     |
+| Committee discovers the incident later            | Quarantine with `dq_failed_rules` trail on the same run                  |
+| “Does it still answer the question?”              | `fitness_for_use` tied to Q1/Q2                                          |
 
+Policy change → Git diff. The job fails loud if a hard rule breaks. That is **computational governance**: the rule does not only document — it **runs**.
 
-### Governança federada — como código (computacional)
+### What makes this scalable
 
-Governança central no papel define política e torce para alguém cumprir. Aqui a mesma intenção vira artefato versionado:
+The repo design grows without rewriting the engine:
 
+1. **New KPI** → a file under `consumption/metrics/*.sql` (+ contract entry). `run_analysis` materializes whatever is in the folder.
+2. **New data product** → a sibling folder under `domains/<domain>/…` with contract, checks, and models. Platform jobs stay the same.
+3. **New quality rule** → declare it in the contract + mirrored Soda check. Severity decides quarantine vs scorecard-only.
+4. **Same topology, different orchestrator** → [`orchestration/pipeline.yaml`](orchestration/pipeline.yaml) describes the graph; the Databricks Bundle materializes and triggers the job today.
 
-| No mundo “papel”                                 | Aqui                                                                     |
-| ------------------------------------------------ | ------------------------------------------------------------------------ |
-| Dicionário / política em portais corporativos    | `[contract.yaml](domains/mobility/taxi_trips/contract.yaml)` (DCS 0.9.3) |
-| Checklist de qualidade em planilhas              | SodaCL + gate no `build_clean` (hard/soft)                               |
-| Steward “responsável” em planilhas e outros docs | Owner no contrato/produto + PR que muda a regra                          |
-| Comitê descobre incidente depois                 | Quarentena com trilha `dq_failed_rules` no mesmo run                     |
-| “Será que ainda serve para a pergunta?”          | `fitness_for_use` amarrado a Q1/Q2                                       |
-
-
-Mudou a política → diff no Git. O job falha alto se a regra crítica quebra. Isso é **governança computacional**: a regra não só documenta — ela **roda**.
-
-### O que torna isso escalável
-
-O desenho do repo permite crescer sem reescrever o motor:
-
-1. **Novo KPI** → um arquivo em `consumption/metrics/*.sql` (+ entrada no contrato). O job `run_analysis` materializa o que estiver na pasta.
-2. **Novo data product** → pasta irmã sob `domains/<domínio>/…` com contrato, checks e models. Os jobs de plataforma continuam os mesmos.
-3. **Nova regra de qualidade** → declaração no contrato + check Soda espelhado. Severidade decide se isola linha ou só pontua o placar.
-4. **Mesma topologia, outro orquestrador** → `[orchestration/pipeline.yaml](orchestration/pipeline.yaml)` descreve o grafo; o Databricks Bundle é quem materializa e dispara o job hoje.
-
-Em resumo: escala por **convenção e declaração**, não por copiar notebook. O custo de um produto a mais é pasta + YAML + SQL, não um pipeline novo inventado do zero.
+In short: scale by **convention and declaration**, not by cloning notebooks. The cost of one more product is folder + YAML + SQL, not a pipeline invented from scratch.
 
 ---
 
-## O que foi construído
+## What was built
 
 ```text
-Arquivos TLC (landing)
+TLC files (landing)
         ↓
-   raw (imutável)          ← ingestão PySpark
+   raw (immutable)         ← PySpark ingest
         ↓
-   clean  ──→  quarentena  ← portão de qualidade (Soda + contrato)
+   clean  ──→  quarantine  ← quality gate (Soda + contract)
         ↓
-   consumption             ← SQL para o consumidor + KPIs Q1/Q2
+   consumption             ← consumer SQL + Q1/Q2 KPIs
         ↓
-   governance              ← placar, perfilagem, fitness, incidentes
+   governance              ← scorecard, profiling, fitness, incidents
 ```
 
-As cinco colunas TLC esperadas pelos consumidores estão em:
+The five TLC columns consumers expect are here:
 
 ```sql
 SELECT VendorID, passenger_count, total_amount,
@@ -136,32 +126,32 @@ SELECT VendorID, passenger_count, total_amount,
 FROM workspace.consumption.vw_taxi_trips_tlc;
 ```
 
-Por baixo, o modelo canônico usa nomes em snake_case (`vendor_id`, `pickup_datetime`…). Yellow e green chegam com prefixos diferentes (`tpep_*` / `lpep_*`); unificar em `tpep_*` mentiria sobre metade da frota. A view TLC republica os nomes de origem **sem duplicar** a tabela.
+Underneath, the canonical model uses snake_case (`vendor_id`, `pickup_datetime`…). Yellow and green arrive with different prefixes (`tpep_*` / `lpep_*`); unifying on `tpep_*` would lie about half the fleet. The TLC view republishes source names **without duplicating** the table.
 
-Há também um Streamlit no Databricks (`apps/dq_dashboard/`) com scorecard, profiling, amostra da quarentena, respostas Q1/Q2 e o contrato. Detalhes em `[report.md](report.md)`.
+There is also a Streamlit app on Databricks (`apps/dq_dashboard/`) with scorecard, profiling, quarantine sample, Q1/Q2 answers, and the contract. UI notes in [`report.md`](report.md).
 
 ---
 
-## Como rodar
+## How to run
 
-**No Databricks Free Edition** (Community Edition foi descontinuada):
+**On Databricks Free Edition** (Community Edition is retired):
 
 ```bash
-# 1) Sobe yellow/green Jan–Mai para o Volume de landing (uma vez)
-# 2) Sincroniza código, faz deploy e executa o job
+# 1) Upload yellow/green Jan–May to the landing Volume (once)
+# 2) Sync code, deploy, and run the job
 ./scripts/deploy.sh
 ```
 
-Isso materializa `raw` / `clean` / `consumption` / `governance` e as tabelas de KPI.
+This materializes `raw` / `clean` / `consumption` / `governance` and the KPI tables.
 
-Portal de observabilidade (opcional na demo):
+Observability portal (optional for demos):
 
 ```bash
 databricks apps deploy taxi-dq-observability
-# Abrir em Compute → Apps → taxi-dq-observability
+# Open under Compute → Apps → taxi-dq-observability
 ```
 
-**Local** (contrato + testes sem precisar do lake):
+**Local** (contract + tests without the lake):
 
 ```bash
 pip install -r requirements-dev.txt
@@ -169,80 +159,70 @@ python src/jobs/validate_contract.py
 pytest tests/ -q
 ```
 
-Passo a passo completo (Volume, permissões do app): [Anexo técnico](#anexo-técnico).
+Full walkthrough (Volume, app grants): [Technical appendix](#technical-appendix).
 
 ---
 
-## O que eu deliberadamente não fiz
+## What I deliberately did not do
 
-- **Não usei Great Expectations / PyDeequ no runtime.** Requisitos de DQ vivem no contrato de dados; a execução das checks de linha é Soda Core, leve no serverless.
-- **O Streamlit é apenas cereja do bolo**, de forma alguma o core da solução. O core é contrato → quality gate → consumo → KPIs auditáveis por `run_id`.
-- **FHV / FHVHV ficaram de fora.** O escopo do produto é táxi (yellow/green); misturar app de frota bagunçaria as perguntas de preço e ocupação.
-- **Quarentena é reescrita a cada execução** do clean. “Há quantos dias isolada?” mede a idade daquela execução, não um histórico infinito de incidentes.
+- **No Great Expectations / PyDeequ at runtime.** DQ requirements live in the data contract; row checks run via Soda Core, light on serverless.
+- **Streamlit is icing**, not the core. Core is contract → quality gate → consumption → KPIs auditable by `run_id`.
+- **FHV / FHVHV are out.** Product scope is taxi (yellow/green); mixing ride-hail fleets would muddy price and occupancy questions.
+- **Quarantine is rewritten each clean run.** “Days isolated” measures age for that run, not an infinite incident history.
 
 ---
 
-## Mapa rápido do repositório
+## Quick repository map
 
-
-| Se você quer…                          | Abra…                                                                                                                                        |
+| If you want…                           | Open…                                                                                                                                        |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Perguntas de negócio                   | `[files/business_questions.md](files/business_questions.md)`                                                                                 |
-| A política (schema, regras, ownership) | `[domains/mobility/taxi_trips/contract.yaml](domains/mobility/taxi_trips/contract.yaml)`                                                     |
-| As checks executáveis                  | `[domains/mobility/taxi_trips/data_quality/checks.yml](domains/mobility/taxi_trips/data_quality/checks.yml)`                                 |
-| SQL da Q1 / Q2                         | `[domains/mobility/taxi_trips/consumption/metrics/](domains/mobility/taxi_trips/consumption/metrics/)`                                       |
-| View com nomes TLC originais           | `[domains/mobility/taxi_trips/consumption/views/vw_taxi_trips_tlc.sql](domains/mobility/taxi_trips/consumption/views/vw_taxi_trips_tlc.sql)` |
-| Jobs do pipeline                       | `[src/jobs/](src/jobs/)`                                                                                                                     |
-| Portal DQ                              | `[apps/dq_dashboard/](apps/dq_dashboard/)` · `[report.md](report.md)`                                                                        |
-
+| Business questions                     | [`files/business_questions.md`](files/business_questions.md) · [`PT`](files/business_questions.pt.md)                                        |
+| Policy (schema, rules, ownership)      | [`domains/mobility/taxi_trips/contract.yaml`](domains/mobility/taxi_trips/contract.yaml)                                                     |
+| Executable checks                      | [`domains/mobility/taxi_trips/data_quality/checks.yml`](domains/mobility/taxi_trips/data_quality/checks.yml)                                 |
+| Q1 / Q2 SQL                            | [`domains/mobility/taxi_trips/consumption/metrics/`](domains/mobility/taxi_trips/consumption/metrics/)                                       |
+| View with original TLC names           | [`domains/mobility/taxi_trips/consumption/views/vw_taxi_trips_tlc.sql`](domains/mobility/taxi_trips/consumption/views/vw_taxi_trips_tlc.sql) |
+| Pipeline jobs                          | [`src/jobs/`](src/jobs/)                                                                                                                     |
+| DQ portal                              | [`apps/dq_dashboard/`](apps/dq_dashboard/) · [`report.md`](report.md)                                                                        |
 
 ---
 
+## Technical appendix
 
+### Layers and objects
 
-## Anexo técnico
-
-
-
-### Camadas e objetos
-
-
-| Camada      | Objeto principal                                            | Como nasce                   |
+| Layer       | Main object                                                 | How it is born               |
 | ----------- | ----------------------------------------------------------- | ---------------------------- |
 | raw         | `yellow_tripdata`, `green_tripdata`                         | PySpark (`ingest_raw`)       |
-| clean       | `taxi_trips` + `taxi_trips_quarantine`                      | SQL canônico + gate Soda     |
+| clean       | `taxi_trips` + `taxi_trips_quarantine`                      | Canonical SQL + Soda gate    |
 | consumption | `taxi_trips`, `vw_taxi_trips_tlc`, `kpi_*`                  | SQL models / metrics / views |
-| governance  | `data_profile`, `dq_validation_result`, `fitness_*`, `vw_*` | profiling + views SQL        |
+| governance  | `data_profile`, `dq_validation_result`, `fitness_*`, `vw_*` | profiling + SQL views        |
 
+Each file under `*/models/*.sql` or `*/metrics/*.sql` **is** the object: the job only resolves `${catalog}` / `${run_id}` and materializes. Adding a KPI = adding a `.sql`.
 
-Cada arquivo em `*/models/*.sql` ou `*/metrics/*.sql` **é** o objeto: o job só resolve `${catalog}` / `${run_id}` e materializa. Adicionar um KPI = adicionar um `.sql`.
+### Spec by DQ dimensions
 
-### Especificação baseada nas dimensões de DQ
+Source: [`contract.yaml`](domains/mobility/taxi_trips/contract.yaml).
 
-Fonte: `[contract.yaml](domains/mobility/taxi_trips/contract.yaml)`.
+| Rule                                | Dimension    | Severity | Effect           |
+| ----------------------------------- | ------------ | -------- | ---------------- |
+| `vendor_id` not null                | completeness | error    | Quarantine       |
+| `total_amount` not null             | completeness | error    | Quarantine       |
+| `pickup_datetime` not null          | completeness | error    | Quarantine       |
+| `dropoff_datetime` not null         | completeness | error    | Quarantine       |
+| `year_month` in Jan–May/2023 window | completeness | error    | Quarantine       |
+| `dropoff` ≥ `pickup`                | consistency  | error    | Quarantine       |
+| `taxi_type` ∈ {yellow, green}       | validity     | error    | Quarantine       |
+| Aggregate coverage of 5 months      | completeness | error    | Fail the job     |
+| `passenger_count` between 1 and 6   | validity     | warning  | Scorecard only   |
+| `total_amount` ≥ 0                  | accuracy     | warning  | Scorecard only   |
+| `vendor_id` ∈ {1, 2}                | validity     | warning  | Scorecard only   |
+| Quarantine rate < 5%                | accuracy     | warning  | Scorecard only   |
+| Approximate duplicate rate          | uniqueness   | warning  | Scorecard only   |
+| Monthly volume vs median            | completeness | warning  | Scorecard only   |
 
+### Metadata in Unity Catalog
 
-| Regra                               | Dimensão     | Severidade | Efeito      |
-| ----------------------------------- | ------------ | ---------- | ----------- |
-| `vendor_id` not null                | completude   | error      | Quarentena  |
-| `total_amount` not null             | completude   | error      | Quarentena  |
-| `pickup_datetime` not null          | completude   | error      | Quarentena  |
-| `dropoff_datetime` not null         | completude   | error      | Quarentena  |
-| `year_month` na janela Jan–Mai/2023 | completude   | error      | Quarentena  |
-| `dropoff` ≥ `pickup`                | consistência | error      | Quarentena  |
-| `taxi_type` ∈ {yellow, green}       | validade     | error      | Quarentena  |
-| Cobertura agregada dos 5 meses      | completude   | error      | Falha o job |
-| `passenger_count` entre 1 e 6       | validade     | warning    | Só placar   |
-| `total_amount` ≥ 0                  | acurácia     | warning    | Só placar   |
-| `vendor_id` ∈ {1, 2}                | validade     | warning    | Só placar   |
-| Taxa de quarentena < 5%             | acurácia     | warning    | Só placar   |
-| Taxa de duplicata aproximada        | unicidade    | warning    | Só placar   |
-| Volume mensal vs mediana            | completude   | warning    | Só placar   |
-
-
-### Metadados no Unity Catalog
-
-Depois de publicar, descrições e tags do contrato vão para a metastore (Comments + Tags). Confira no Catalog Explorer em `workspace.consumption.taxi_trips`, ou:
+After publish, contract descriptions and tags go to the metastore (Comments + Tags). Check Catalog Explorer on `workspace.consumption.taxi_trips`, or:
 
 ```sql
 SELECT column_name, comment
@@ -250,14 +230,14 @@ FROM workspace.information_schema.columns
 WHERE table_schema = 'consumption' AND table_name = 'taxi_trips';
 ```
 
-### Orquestração
+### Orchestration
 
-- Topologia: `[orchestration/pipeline.yaml](orchestration/pipeline.yaml)`
-- Databricks: `[databricks.yml](databricks.yml)` — job `taxi_data_product`
+- Topology: [`orchestration/pipeline.yaml`](orchestration/pipeline.yaml)
+- Databricks: [`databricks.yml`](databricks.yml) — job `taxi_data_product`
 
-Fluxo: `ingest_raw` → `build_clean` → `publish_consumption` → `run_analysis`.
+Flow: `ingest_raw` → `build_clean` → `publish_consumption` → `run_analysis`.
 
-### Execução local completa
+### Full local run
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -275,7 +255,7 @@ python src/jobs/run_analysis.py
 
 ### Databricks — upload + deploy
 
-Volume de landing padrão: `/Volumes/workspace/default/taxi_landing`.
+Default landing Volume: `/Volumes/workspace/default/taxi_landing`.
 
 ```bash
 for f in files/{yellow,green}_tripdata_2023-0{1,2,3,4,5}.parquet; do
@@ -285,10 +265,10 @@ done
 ./scripts/deploy.sh
 ```
 
-O script sincroniza `domains/`, `platform/` e `src/` no Volume de código (os jobs leem daí no serverless), faz o deploy do bundle e dispara o pipeline. Use `--no-run` se quiser só sincronizar/deployar.
+The script syncs `domains/`, `platform/`, and `src/` to the code Volume (serverless jobs read from there), deploys the bundle, and triggers the pipeline. Use `--no-run` to sync/deploy only.
 
-Observabilidade: portal Streamlit em `[apps/dq_dashboard/](apps/dq_dashboard/)` — ver `[report.md](report.md)`.
+Observability: Streamlit portal in [`apps/dq_dashboard/`](apps/dq_dashboard/) — see [`report.md`](report.md).
 
-### Padrão do contrato
+### Contract standard
 
-Usamos como base o [Data Contract Specification 0.9.3](https://datacontract.com/). 
+We base the policy on the [Data Contract Specification 0.9.3](https://datacontract.com/).
