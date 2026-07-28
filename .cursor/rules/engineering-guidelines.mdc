@@ -1,11 +1,12 @@
 ---
-description: Karpathy-inspired engineering guidelines for this data product repo
+description: Engineering guidelines for this data product repo
 alwaysApply: true
 ---
 
-# Karpathy Guidelines (adapted)
+# Engineering Guidelines
 
-Source: https://gist.github.com/Planxnx/64b173bacf2c8c43435c4333d0b9bd94
+Adapted from Karpathy-style engineering guidelines:
+https://gist.github.com/Planxnx/64b173bacf2c8c43435c4333d0b9bd94
 
 Apply these rules on every change in this repository.
 
