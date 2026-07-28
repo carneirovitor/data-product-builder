@@ -4,12 +4,12 @@
 
 Hi. This repo shows how to translate **Data Governance** frameworks into the language of **Data Engineering**.
 
-The working example is an NYC taxi **data product**: the [business questions](files/business_questions.md) only make sense if we know **what landed**, **what was rejected**, **why**, and **whether the product still answers the question**.
+The working example is an NYC taxi **data product**: the [business questions](files/business_questions.md) are only trustworthy if we know **what landed**, **what was rejected**, **why**, and **whether the product still answers the question**.
 
 Short on time? Read in this order:
 
 1. [Answers to the business questions](#answers-to-the-business-questions) — the numbers
-2. [How we think about quality](#how-we-think-about-quality) — the most important decision
+2. [How we think about data quality](#how-we-think-about-data-quality) — the most important decision
 3. [Why the repository looks like this](#why-the-repository-looks-like-this) — rationale (mesh, governance as code, scale)
 4. [What was built](#what-was-built) — one-screen overview
 5. [How to run](#how-to-run) — if you want to reproduce
@@ -52,14 +52,14 @@ SQL that produces these numbers: [`domains/mobility/taxi_trips/consumption/metri
 
 ---
 
-## How we think about quality
+## How we think about data quality
 
-Quality here is not “zero nulls at any cost”. It is balancing **trust** with **representativeness**.
+The goal here is to keep trust in the answers to the business questions.
 
 - **Hard** rules (null timestamps, dropoff before pickup, month outside the window…) → the trip goes to **quarantine** and does not enter analysis.
 - **Soft** rules (`passenger_count` outside 1–6, negative `total_amount`) → they hit the **scorecard**, but the row stays. TLC negatives are often adjustments/refunds; missing passenger count is known source noise — not a pipeline bug.
 
-That trade-off is written in the [contract](domains/mobility/taxi_trips/contract.yaml) and mirrored in SodaCL. It is not a hidden code detail: it is policy.
+That trade-off is written in the [contract](domains/mobility/taxi_trips/contract.yaml) as policy and mirrored in SodaCL.
 
 The dimensions we use (completeness, accuracy, consistency, validity, uniqueness) follow DAMA thinking. **Timeliness/freshness** is out of scope for this product: the slice is a historical Jan–May/2023 batch with no streaming SLA — covering the five months is **window completeness**, not “data arrived on time”. The per-dimension scorecard lives in `governance.vw_dq_scorecard`.
 
@@ -69,12 +69,12 @@ We also check **fitness for use**: do Q1’s five months exist? Does May have ho
 
 ## Why the repository looks like this
 
-The point was not “pretty folders”. It was translating **data mesh** and **federated governance** — which in companies often live as PDFs, committees, and RACI charts — into something the pipeline **executes**.
+The rationale was translating **data mesh** and **federated governance** — which in companies often live as PDFs, committees, and RACI charts — into something the pipeline **executes**.
 
-### Data mesh inspiration (no theater)
+### Data mesh inspiration
 
-- **Domain owns the product.** Mobility owns `taxi_trips`: schema, rules, severity, and the SQL that materializes each layer. It is not a generic “lake team” deciding everyone’s policy.
-- **Clear product interface.** Consumers get `consumption.*` (plus the view with original TLC names). Quarantine and the scorecard are reliability operations, not the product API.
+- **Domain owns the product.** Mobility owns `taxi_trips`: schema, rules, severity, and the SQL that materializes each layer. It is not a central “data team” owning every policy, accountability, and decision.
+- **Clear product interface.** Consumers get `consumption.*` (plus the view with original TLC names). Quarantine and the scorecard support reliability operations and context.
 - **Self-serve with a thin platform.** Generic jobs (`sql_runner`, `soda_runner`, `governance_engine`) do not know taxi business rules — they read the contract and the domain `.sql` files. The platform enables; the domain decides.
 
 ### Federated governance — as code (computational)

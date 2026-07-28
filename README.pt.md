@@ -4,12 +4,12 @@
 
 Olá. Este repo foi criado para demonstrar como podemos traduzir frameworks de **Governança de Dados** na linguagem de **Engenharia de Dados**.
 
-O exemplo prático é um **data product** de corridas de táxi NYC: os números das [perguntas de negócio](files/business_questions.pt.md) só fazem sentido se a gente souber **o que entrou**, **o que foi rejeitado**, **por quê**, e **se o produto ainda serve para a pergunta**.
+O exemplo prático é um **data product** de corridas de táxi NYC: os números das [perguntas de negócio](files/business_questions.pt.md) só são confiáveis se a gente souber **o que entrou**, **o que foi rejeitado**, **por quê**, e **se o produto ainda serve para a pergunta**.
 
 Se você tem pouco tempo, leia nesta ordem:
 
 1. [As respostas às perguntas de negócio](#as-respostas-às-perguntas-de-negócio) — os números
-2. [Como pensamos qualidade](#como-pensamos-qualidade) — a decisão mais importante
+2. [Como pensamos na qualidade dos dados](#como-pensamos-na-qualidade-dos-dados) — a decisão mais importante
 3. [Por que o repositório é assim](#por-que-o-repositório-é-assim) — racional (mesh, governança como código, escala)
 4. [O que foi construído](#o-que-foi-construído) — panorama em uma tela
 5. [Como rodar](#como-rodar) — se quiser reproduzir
@@ -52,16 +52,15 @@ SQL que gera esses números: [`domains/mobility/taxi_trips/consumption/metrics/`
 
 ---
 
-## Como pensamos qualidade
-
-Qualidade aqui não é “zerar nulos a qualquer custo”. É combinar **confiança** com **representatividade**.
+## Como pensamos na qualidade dos dados
+O objetivo aqui é garantir a confiança nas respostas das perguntas de negócio.
 
 - Regras **críticas** (timestamps nulos, desembarque antes do embarque, mês fora da janela…) → a corrida vai para **quarentena** e não entra na análise.
 - Regras **leves** (`passenger_count` fora de 1–6, `total_amount` negativo) → entram no **placar**, mas a linha segue. Negativos no TLC costumam ser ajuste/reembolso; passageiro ausente é ruído conhecido da fonte — não um erro de pipeline.
 
-Esse trade-off está escrito no [contrato](domains/mobility/taxi_trips/contract.yaml) e espelhado no SodaCL. Não é um detalhe escondido no código: é política.
+Esse trade-off está escrito no [contrato](domains/mobility/taxi_trips/contract.yaml) como política e espelhado no SodaCL.
 
-As dimensões que usamos (completude, acurácia, consistência, validade, unicidade) seguem a lógica DAMA. **Atualidade/frescor** não entra neste produto: o recorte é batch histórico Jan–Mai/2023, sem SLA de streaming — cobertura dos cinco meses é **completude da janela**, não “dado chegou a tempo”. O placar por dimensão vive em `governance.vw_dq_scorecard`.
+As dimensões que usamos (completude, acurácia, consistência, validade, unicidade) seguem a lógica DAMA. **Temporalidade/frescor** não entra neste produto: o recorte é batch histórico Jan–Mai/2023, sem SLA de streaming — cobertura dos cinco meses é **completude da janela**, não “dado chegou a tempo”. O scorecard por dimensão vive em `governance.vw_dq_scorecard`.
 
 Também checamos **adequação ao uso**: os cinco meses da Q1 existem? Maio tem cobertura horária para a Q2? A camada de consumo entrega as colunas combinadas? Isso fica em `governance.fitness_for_use_result`.
 
@@ -69,12 +68,13 @@ Também checamos **adequação ao uso**: os cinco meses da Q1 existem? Maio tem 
 
 ## Por que o repositório é assim
 
-O racional não foi “organizar pastas bonitinhas”. Foi traduzir ideias de **data mesh** e de **governança federada** — que na empresa costumam viver em PDF, comitê e RACI — para algo que o pipeline **executa**.
+O racional foi traduzir ideias de **data mesh** e de **governança federada** — que na empresa costumam viver em PDF, comitê e RACI — para algo que o pipeline **executa**.
 
-### Inspiração em data mesh (sem teatro)
+### Inspiração em data mesh
 
-- **Domínio dono do produto.** Mobility é responsável por `taxi_trips`: schema, regras, severidade e o SQL que materializa cada camada. Não é um “time de lake” genérico decidindo a política de todo mundo.
-- **Produto com interface clara.** O consumidor recebe `consumption.*` (e a view com os nomes TLC originais). Quarentena e placar são operação de confiabilidade, não a API do produto.
+- **Domínio dono do produto.** Mobility é responsável por `taxi_trips`: schema, regras, severidade e o SQL que materializa cada camada. Não é um "data-team" centralizando todas políticas, responsabilidades e decisões.
+
+- **Produto com interface clara.** O consumidor recebe `consumption.*` (e a view com os nomes TLC originais). Quarentena e scorecard são para operação de confiabilidade e contexto.
 - **Self-serve com plataforma fina.** Jobs genéricos (`sql_runner`, `soda_runner`, `governance_engine`) não conhecem a regra de negócio do táxi — leem o contrato e os `.sql` do domínio. A plataforma habilita; o domínio decide.
 
 ### Governança federada — como código (computacional)
